@@ -1,7 +1,7 @@
 import { useCallback, useState, type ChangeEvent } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useDebouncedCallback } from 'use-debounce';
-import { fetchNotes, deleteNote, hasToken } from '../../services/noteService';
+import { fetchNotes, hasToken } from '../../services/noteService';
 import NoteList from '../NoteList/NoteList';
 import SearchBox from '../SearchBox/SearchBox';
 import Pagination from '../Pagination/Pagination';
@@ -14,7 +14,6 @@ export default function App() {
   const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
-  const client = useQueryClient();
   const closeModal = useCallback(() => setIsOpen(false), []);
   const updateSearch = useDebouncedCallback((value: string) => {
     setSearch(value.trim());
@@ -23,14 +22,8 @@ export default function App() {
   const query = useQuery({
     queryKey: ['notes', page, search],
     queryFn: ({ signal }) => fetchNotes({ page, search, signal }),
+    placeholderData: keepPreviousData,
     enabled: hasToken,
-  });
-  const deletion = useMutation({
-    mutationFn: deleteNote,
-    onSuccess: async () => {
-      if (query.data?.notes.length === 1 && page > 1) setPage(page - 1);
-      await client.invalidateQueries({ queryKey: ['notes'] });
-    },
   });
   const handleSearch = (event: ChangeEvent<HTMLInputElement>) => {
     setInput(event.target.value);
@@ -68,9 +61,6 @@ export default function App() {
           <button onClick={() => void query.refetch()}>Try again</button>
         </div>
       )}
-      {deletion.isError && (
-        <p role="alert">Could not delete the note. Please try again.</p>
-      )}
       {query.isSuccess && query.data.notes.length === 0 && (
         <p role="status">
           {search
@@ -81,8 +71,9 @@ export default function App() {
       {!!query.data?.notes.length && (
         <NoteList
           notes={query.data.notes}
-          onDelete={(id: string) => deletion.mutate(id)}
-          deletingId={deletion.isPending ? deletion.variables : undefined}
+          onNoteDeleted={() => {
+            if (query.data?.notes.length === 1 && page > 1) setPage(page - 1);
+          }}
         />
       )}
       {isOpen && (
